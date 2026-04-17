@@ -1,6 +1,6 @@
 # Small bugs
 
-This is a list to keep track of very small bugs that could be fixed later in a unified patch.
+This is a list to keep track of small bugs that could be fixed later in a consolidated patch.
 
 ## Wrong cursor position when in header
 
@@ -20,3 +20,24 @@ Display equations should work with two dollar signs on open and close, but curre
 - Write `$$equation$$`
 - It converts to inline instead of display
 - Using `$$$equation$$$` makes it display, then closing can convert it back to `$$` 
+
+
+## Pasting text with math 
+
+When a markdown text that contains math is pasted the resulting text does not have the `$` for the math equations. For example:
+
+Copying
+
+```tex
+$$
+\implies S=\lim_{ n \to \infty } \sum_{i=1}^N|| \frac{\vec{r}(t_{i}+\Delta t_{i})-\vec{r}(t_{i})}{\Delta t_{i}}||\Delta t_{i}
+$$
+```
+
+then pasting into Prose, results in
+
+```plain
+\implies S=\lim_{ n \to \infty } \sum_{i=1}^N|| \frac{\vec{r}(t_{i}+\Delta t_{i})-\vec{r}(t_{i})}{\Delta t_{i}}||\Delta t_{i}
+```
+
+which renders unusable the ability to copy and paste math equations.
