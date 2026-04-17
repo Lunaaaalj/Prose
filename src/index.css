@@ -13,3 +13,12 @@
 .dark .ProseMirror p.is-editor-empty:first-child::before {
   color: theme("colors.neutral.600");
 }
+
+.tiptap-mathematics-render[data-type="block-math"] {
+  text-align: center;
+  margin: 1em 0;
+}
+
+.tiptap-mathematics-render--editable {
+  cursor: pointer;
+}
