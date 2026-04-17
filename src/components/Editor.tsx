@@ -13,7 +13,7 @@ import {
   logConversion,
 } from "../utils/conversionLogger";
 
-const BLOCK_MATH_RE = /^(\${2,3})(?!\$)([\s\S]+?)\1$/;
+const BLOCK_MATH_RE = /^\$\$(?!\$)([\s\S]+?)\$\$$/;
 const INLINE_MATH_RE = /(?<![\$\d])\$(?!\$)([^$\n]+?)\$(?!\d)/g;
 
 function selectionTouchesRange(
@@ -577,7 +577,9 @@ const MathMigration = Extension.create({
 
             const tr = newState.tr;
 
-            const blockHits: Array<{ from: number; to: number; latex: string }> = [];
+            const typedNow = transactions.some((tr) => tr.docChanged);
+            const blockHits: Array<{ from: number; to: number; latex: string; placeCursorAfter: boolean }> = [];
+            let forcedCursorPos: number | null = null;
             newState.doc.descendants((node, pos) => {
               if (node.type !== paragraph) return;
               const paragraphMap = getParagraphTextMap(node, pos);
@@ -594,7 +596,15 @@ const MathMigration = Extension.create({
               if (!m) return;
               const matchFrom = pos + 1;
               const matchTo = pos + node.nodeSize - 1;
-              if (selectionTouchesRange(selectionFrom, selectionTo, matchFrom, matchTo)) {
+              const closingTypedAtEnd =
+                typedNow &&
+                newState.selection.empty &&
+                selectionFrom === selectionTo &&
+                selectionFrom === matchTo;
+              if (
+                selectionTouchesRange(selectionFrom, selectionTo, matchFrom, matchTo) &&
+                !closingTypedAtEnd
+              ) {
                 logConversion({
                   kind: "skip",
                   plugin: "mathMigration",
@@ -603,7 +613,7 @@ const MathMigration = Extension.create({
                 });
                 return;
               }
-              const latex = m[2].trim();
+              const latex = m[1].trim();
               if (!latex) {
                 logConversion({
                   kind: "skip",
@@ -618,22 +628,35 @@ const MathMigration = Extension.create({
                 plugin: "mathMigration",
                 nodeType: "blockMath-candidate",
                 range: { from: pos, to: pos + node.nodeSize },
-                details: { latex },
+                details: { latex, closingTypedAtEnd },
               });
-              blockHits.push({ from: pos, to: pos + node.nodeSize, latex });
+              blockHits.push({
+                from: pos,
+                to: pos + node.nodeSize,
+                latex,
+                placeCursorAfter: closingTypedAtEnd,
+              });
             });
             for (let i = blockHits.length - 1; i >= 0; i--) {
-              const { from, to, latex } = blockHits[i];
-              tr.replaceWith(from, to, blockMath.create({ latex }));
+              const { from, to, latex, placeCursorAfter } = blockHits[i];
+              const mappedFrom = tr.mapping.map(from);
+              const mappedTo = tr.mapping.map(to);
+              const blockNode = blockMath.create({ latex });
+              tr.replaceWith(mappedFrom, mappedTo, blockNode);
+              if (placeCursorAfter) {
+                const afterBlock = mappedFrom + blockNode.nodeSize;
+                tr.insert(afterBlock, paragraph.create());
+                forcedCursorPos = afterBlock + 1;
+              }
               logConversion({
                 kind: "convert",
                 plugin: "mathMigration",
                 from: "paragraph",
                 to: "blockMath",
-                range: { from, to },
+                range: { from: mappedFrom, to: mappedTo },
                 cursorBefore: selectionFrom,
-                cursorAfter: selectionFrom,
-                details: { latex },
+                cursorAfter: forcedCursorPos ?? selectionFrom,
+                details: { latex, placeCursorAfter },
               });
             }
 
@@ -650,52 +673,72 @@ const MathMigration = Extension.create({
                   const localTo = localFrom + m[0].length;
                   const from = run.offsetToPos(localFrom);
                   const to = run.offsetToPos(localTo);
-                const before = charBefore(tr.doc, from);
-                const after = charAfter(tr.doc, to);
-                if (before === "$" || after === "$") {
+                  const openPrev = localFrom > 0 ? run.text[localFrom - 1] : "";
+                  const openNext = localFrom + 1 < run.text.length ? run.text[localFrom + 1] : "";
+                  const closePrev = localTo - 2 >= 0 ? run.text[localTo - 2] : "";
+                  const closeNext = localTo < run.text.length ? run.text[localTo] : "";
+                  if (openPrev === "$" || openNext === "$" || closePrev === "$" || closeNext === "$") {
+                    logConversion({
+                      kind: "skip",
+                      plugin: "mathMigration",
+                      reason: "adjacent $ around inline delimiter",
+                      details: {
+                        phase: "inline",
+                        range: { from, to },
+                        openPrev,
+                        openNext,
+                        closePrev,
+                        closeNext,
+                      },
+                    });
+                    continue;
+                  }
+                  const before = charBefore(tr.doc, from);
+                  const after = charAfter(tr.doc, to);
+                  if (before === "$" || after === "$") {
+                    logConversion({
+                      kind: "skip",
+                      plugin: "mathMigration",
+                      reason: "adjacent $ (block-math overlap)",
+                      details: { phase: "inline", range: { from, to }, before, after },
+                    });
+                    continue;
+                  }
+                  if (before && /\d/.test(before)) {
+                    logConversion({
+                      kind: "skip",
+                      plugin: "mathMigration",
+                      reason: "digit before",
+                      details: { phase: "inline", range: { from, to }, before },
+                    });
+                    continue;
+                  }
+                  if (after && /\d/.test(after)) {
+                    logConversion({
+                      kind: "skip",
+                      plugin: "mathMigration",
+                      reason: "digit after",
+                      details: { phase: "inline", range: { from, to }, after },
+                    });
+                    continue;
+                  }
+                  if (selectionTouchesRange(selectionFrom, selectionTo, from, to)) {
+                    logConversion({
+                      kind: "skip",
+                      plugin: "mathMigration",
+                      reason: "selection touches range",
+                      details: { phase: "inline", range: { from, to } },
+                    });
+                    continue;
+                  }
                   logConversion({
-                    kind: "skip",
+                    kind: "detect",
                     plugin: "mathMigration",
-                    reason: "adjacent $ (block-math overlap)",
-                    details: { phase: "inline", range: { from, to }, before, after },
+                    nodeType: "inlineMath-candidate",
+                    range: { from, to },
+                    details: { latex: m[1] },
                   });
-                  continue;
-                }
-                if (before && /\d/.test(before)) {
-                  logConversion({
-                    kind: "skip",
-                    plugin: "mathMigration",
-                    reason: "digit before",
-                    details: { phase: "inline", range: { from, to }, before },
-                  });
-                  continue;
-                }
-                if (after && /\d/.test(after)) {
-                  logConversion({
-                    kind: "skip",
-                    plugin: "mathMigration",
-                    reason: "digit after",
-                    details: { phase: "inline", range: { from, to }, after },
-                  });
-                  continue;
-                }
-                if (selectionTouchesRange(selectionFrom, selectionTo, from, to)) {
-                  logConversion({
-                    kind: "skip",
-                    plugin: "mathMigration",
-                    reason: "selection touches range",
-                    details: { phase: "inline", range: { from, to } },
-                  });
-                  continue;
-                }
-                logConversion({
-                  kind: "detect",
-                  plugin: "mathMigration",
-                  nodeType: "inlineMath-candidate",
-                  range: { from, to },
-                  details: { latex: m[1] },
-                });
-                inlineHits.push({ from, to, latex: m[1] });
+                  inlineHits.push({ from, to, latex: m[1] });
                 }
               }
             });
@@ -731,6 +774,9 @@ const MathMigration = Extension.create({
                 reason: "no net doc change",
               });
               return null;
+            }
+            if (forcedCursorPos !== null) {
+              tr.setSelection(TextSelection.create(tr.doc, forcedCursorPos));
             }
             tr.setMeta("addToHistory", false);
             return tr;
