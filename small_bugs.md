@@ -11,7 +11,7 @@ When the cursor is a hash, the cursor is positioned in the hash itself, which ca
 
 ## Strange cursor positioning after writing first inline equation
 
-When writing the first and only the first math equation, and closing it, the cursor will appear inside the equation for a moment, only for it to appear right next to it (where it should be) after less than a second.
+When writing the first and only the first math equation, and closing it, the cursor will appear inside the equation for a moment, only for it to appear right next to it (where it should be) after a second.
 
 ## Display math still needs three dollar signs
 
@@ -20,6 +20,22 @@ Display equations should work with two dollar signs on open and close, but curre
 - Write `$$equation$$`
 - It converts to inline instead of display
 - Using `$$$equation$$$` makes it display, then closing can convert it back to `$$` 
+
+## Display math only works with inline `$$`
+
+Display math wont work if the equation is written in the form
+
+```tex
+$$
+\implies S=\lim_{ n \to \infty } \sum_{i=1}^N|| \frac{\vec{r}(t_{i}+\Delta t_{i})-\vec{r}(t_{i})}{\Delta t_{i}}||\Delta t_{i}
+$$
+```
+
+Instead, it will only render for
+
+```tex
+$$\implies S=\lim_{ n \to \infty } \sum_{i=1}^N|| \frac{\vec{r}(t_{i}+\Delta t_{i})-\vec{r}(t_{i})}{\Delta t_{i}}||\Delta t_{i}$$
+```
 
 
 ## Pasting text with math 
