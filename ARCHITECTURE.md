@@ -12,7 +12,7 @@ Prose is a macOS desktop markdown editor built on **Tauri 2** — a framework th
 │  invoke("command_name", args)  ─────────┐  │
 │  ← Result<T, String>           ◄────────┘  │
 └──────────────────────┬──────────────────────┘
-                       │  Tauri IPC (JSON over shared memory)
+                       │  Tauri IPC (serialized messages)
 ┌──────────────────────▼──────────────────────┐
 │  Rust process (backend)                     │
 │  src-tauri/src/lib.rs — prose_lib::run()    │
@@ -128,7 +128,7 @@ Tauri CLI
    └── compiles Rust crate → embeds Vite output into native .app / .dmg
 ```
 
-`npm run tauri dev` runs both processes concurrently and hot-reloads the WebView on frontend changes. `npm run tauri build` produces a signed, notarizable macOS bundle. The Vite dev port **1420** is hardcoded in `src-tauri/tauri.conf.json`; changing it without updating that file breaks the dev build.
+`npm run tauri dev` runs both processes concurrently and hot-reloads the WebView on frontend changes. `npm run tauri build` produces a macOS app bundle; signing and notarization require additional developer configuration (certificates and Tauri signing setup). The Vite dev port **1420** is hardcoded in `src-tauri/tauri.conf.json`; changing it without updating that file breaks the dev build.
 
 ---
 

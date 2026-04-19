@@ -13,7 +13,7 @@ WebView (React/TS)  ←IPC→  Tauri (Rust)
   Math rendering (KaTeX)     Capability-gated
 ```
 
-The frontend runs in an isolated Chromium WebView; it cannot access the filesystem directly. All I/O goes through registered Tauri commands, which are capability-checked before execution.
+The frontend runs in an isolated system WebView (WebKit on macOS); it cannot access the filesystem directly. All I/O goes through registered Tauri commands, which are capability-checked before execution.
 
 ---
 
@@ -45,10 +45,10 @@ The frontend runs in an isolated Chromium WebView; it cannot access the filesyst
 
 **Mitigations:**
 - **Capability system**: `capabilities/default.json` declares which APIs the `main` window can invoke. Calls outside this allowlist are rejected at the Tauri layer.
-- **WebView isolation**: The frontend runs in a sandboxed Chromium instance. Breaking out would require a Chromium vulnerability (possible but not trivial).
+- **WebView isolation**: The frontend runs in a sandboxed system WebView. Breaking out would require a WebView vulnerability (possible but not trivial).
 - **Limited backend surface**: Only two commands are registered: `greet` (unused) and `log_conversion` (append-only log). Even if the capability system were bypassed, the damage is limited to appending a line to a log file.
 
-**Risk:** Low (requires Chromium exploit).
+**Risk:** Low (requires WebView exploit).
 
 ---
 
@@ -96,7 +96,7 @@ The frontend runs in an isolated Chromium WebView; it cannot access the filesyst
 **Threat:** Unsigned or tampered bundle.
 
 **Current state:**
-- The macOS app is built via `npm run tauri build` and notarized (likely, if following Tauri defaults).
+- The macOS app is built via `npm run tauri build`; signing and notarization are optional and require explicit developer configuration (certificates and CI secrets).
 - Source code is on GitHub; users can clone and build locally to verify contents.
 - No code signing or integrity checking of the packaged `.app` at runtime.
 
@@ -107,7 +107,7 @@ The frontend runs in an isolated Chromium WebView; it cannot access the filesyst
 **Mitigations:**
 - Document the build process in `CONTRIBUTING.md` (already done).
 - Consider publishing SHA-256 checksums of releases.
-- Sign and notarize the macOS bundle (Tauri does this by default).
+- Sign and notarize the macOS bundle (requires developer certificates and explicit configuration — not automatic).
 
 **Risk:** Low (current; GitHub + source builds are trustworthy).
 
@@ -135,10 +135,10 @@ Complex nesting can cause exponential rendering time, freezing the UI.
 
 ### 7. WebView sandbox escape
 
-**Threat:** A vulnerability in Chromium could allow breaking out of the WebView.
+**Threat:** A vulnerability in the system WebView could allow breaking out of the sandbox.
 
 **Mitigations:**
-- Tauri uses the system Chromium (on macOS, the WebKit engine).
+- Tauri uses the system WebView (WebKit on macOS).
 - Isolation is enforced at the OS level.
 - Capability system limits what the WebView can call even if escape occurs.
 
@@ -178,7 +178,7 @@ Compromise Prose
 │
 ├── DoS
 │   ├── Expensive math        [MITIGATED: KaTeX limits]
-│   └── Render timeout        [MITIGATED: UI remains responsive]
+│   └── Render timeout        [NOT MITIGATED: timeout not yet implemented]
 │
 └── Dependency vuln
     ├── KaTeX exploit         [MITIGATED: actively maintained]
@@ -240,7 +240,7 @@ As Prose gains features, new threats emerge:
 The main risks are:
 
 1. **Third-party dependencies** (KaTeX, React, Tauri) — mitigated by routine audits.
-2. **Chromium vulnerabilities** (rare) — mitigated by OS sandbox + limited Tauri surface.
+2. **WebView vulnerabilities** (rare) — mitigated by OS sandbox + limited Tauri surface.
 3. **Future features** (Pandoc, cloud sync, plugins) — will require careful design.
 
 Users are safe to edit markdown and math locally. As features expand, expand threat modeling to match.

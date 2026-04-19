@@ -30,7 +30,7 @@ Prose is in pre-release (v0.1). There are no stable releases yet.
 **Prose currently:**
 - Edits markdown files locally on your machine
 - Does not send data to external servers
-- Uses Tauri (a secure framework that bundles Chromium and communicates via IPC, not HTTP)
+- Uses Tauri (a secure framework that uses the system WebView and communicates via IPC, not HTTP)
 - Logs conversion events to a local `conversion.log` file for debugging
 
 **Prose does NOT:**
@@ -70,7 +70,7 @@ npm install
 npm run tauri build
 ```
 
-This produces a signed macOS app bundle. You can inspect the code in `src/` and `src-tauri/` before building.
+This produces a macOS app bundle. Signing and notarization require additional configuration (developer certificates and Tauri signing setup). You can inspect the code in `src/` and `src-tauri/` before building.
 
 ## Security roadmap
 
