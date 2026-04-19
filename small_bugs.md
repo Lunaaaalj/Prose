@@ -54,8 +54,15 @@ $$
 
 then pasting into Prose, results in
 
-```plain
+```tex
 \implies S=\lim_{ n \to \infty } \sum_{i=1}^N|| \frac{\vec{r}(t_{i}+\Delta t_{i})-\vec{r}(t_{i})}{\Delta t_{i}}||\Delta t_{i}
 ```
 
 which renders unusable the ability to copy and paste math equations.
+
+# Wrong formatting
+Cannot use `***bold italics***`. Reverse conversion should also work with formatting.
+
+# Math reverse conversion
+
+The reverse conversion of math equations when backspacing into the equation results in the cursor moving to the inside of the equation. It should just appear beside the outer `$` (to the right) without entering the equation.
