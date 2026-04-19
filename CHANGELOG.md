@@ -10,6 +10,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- File open via native dialog (Cmd+O) — pick any `.md` / `.markdown` file; content is loaded into the editor via the `read_file` IPC command
+- File save via native dialog (Cmd+S) — saves current editor content as Markdown; prompts for a path on first save (Save As), then saves in-place on subsequent presses
+- Window title reflects the open filename and dirty state (prefix `•` when unsaved changes are present)
+- `src/utils/markdown.ts` — `markdownToHtml` and `htmlToMarkdown` round-trip utilities (used at the file I/O boundary)
+- `tauri-plugin-dialog` and `tauri-plugin-fs` plugins registered in the Rust backend
+- `read_file` and `write_file` Tauri commands for proxied filesystem access
+- `dialog:default`, `fs:default`, and `core:window:allow-set-title` capability permissions
+- `Editor` now accepts `initialMarkdown`, `onChange`, and `editorRef` props to support controlled file state from `App`
 - `ARCHITECTURE.md` — deep-dive on the two-process Tauri model, IPC boundary, TipTap extensions, Tailwind setup
 - `CONTRIBUTING.md` — contribution guidelines, commit conventions, branch naming, PR workflow
 - `SECURITY.md` — responsible disclosure policy, supported versions, supply chain audit guidance

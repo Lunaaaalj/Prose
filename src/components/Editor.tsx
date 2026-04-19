@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type RefObject } from "react";
 import { Extension, type Editor as TiptapEditor } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -12,6 +12,7 @@ import {
   endConversionGroup,
   logConversion,
 } from "../utils/conversionLogger";
+import { markdownToHtml } from "../utils/markdown";
 
 const BLOCK_MATH_RE = /^\$\$(?!\$)([\s\S]+?)\$\$$/;
 const INLINE_MATH_RE = /(?<![\$\d])\$(?!\$)([^$\n]+?)\$(?!\d)/g;
@@ -813,7 +814,13 @@ function revertBlockMath(editor: TiptapEditor, node: PMNode, pos: number) {
   editor.view.focus();
 }
 
-export function Editor() {
+type EditorProps = {
+  initialMarkdown?: string;
+  onChange?: () => void;
+  editorRef?: RefObject<TiptapEditor | null>;
+};
+
+export function Editor({ initialMarkdown, onChange, editorRef: externalRef }: EditorProps = {}) {
   const editorRef = useRef<TiptapEditor | null>(null);
 
   const editor = useEditor({
@@ -837,7 +844,7 @@ export function Editor() {
       MathEditOnTouch,
       MathMigration,
     ],
-    content: "",
+    content: markdownToHtml(initialMarkdown ?? ""),
     editorProps: {
       attributes: {
         class:
@@ -848,9 +855,13 @@ export function Editor() {
         autocomplete: "off",
       },
     },
+    onUpdate: () => {
+      onChange?.();
+    },
   });
 
   editorRef.current = editor;
+  if (externalRef) externalRef.current = editor;
 
   return <EditorContent editor={editor} />;
 }
