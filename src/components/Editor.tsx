@@ -5,15 +5,9 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { BlockMath, InlineMath } from "@tiptap/extension-mathematics";
 import { Plugin, PluginKey, TextSelection, type EditorState } from "@tiptap/pm/state";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import {
-  beginConversionGroup,
-  endConversionGroup,
-  logConversion,
-} from "../utils/conversionLogger";
 
-const BLOCK_MATH_RE = /^\$\$(?!\$)([\s\S]+?)\$\$$/;
+const BLOCK_MATH_RE = /^(\${2,3})(?!\$)([\s\S]+?)\1$/;
 const INLINE_MATH_RE = /(?<![\$\d])\$(?!\$)([^$\n]+?)\$(?!\d)/g;
 
 function selectionTouchesRange(
@@ -66,54 +60,6 @@ function getParagraphTextMap(node: PMNode, pos: number) {
   return { text, offsetToPos };
 }
 
-type TextRun = {
-  text: string;
-  offsetToPos: (offset: number) => number;
-};
-
-function getParagraphTextRuns(node: PMNode, pos: number): TextRun[] {
-  type Segment = { start: number; end: number; from: number };
-  const runs: TextRun[] = [];
-  let currentText = "";
-  let currentSegments: Segment[] = [];
-
-  const flush = () => {
-    if (currentText.length === 0) return;
-    const text = currentText;
-    const segments = currentSegments;
-    runs.push({
-      text,
-      offsetToPos: (offset: number) => {
-        for (let i = 0; i < segments.length; i++) {
-          const seg = segments[i];
-          if (offset <= seg.end) {
-            const local = Math.max(0, Math.min(offset - seg.start, seg.end - seg.start));
-            return seg.from + local;
-          }
-        }
-        const last = segments[segments.length - 1];
-        return last.from + (last.end - last.start);
-      },
-    });
-    currentText = "";
-    currentSegments = [];
-  };
-
-  node.forEach((child, offset) => {
-    if (!child.isText || !child.text) {
-      flush();
-      return;
-    }
-    const start = currentText.length;
-    currentText += child.text;
-    const end = currentText.length;
-    currentSegments.push({ start, end, from: pos + 1 + offset });
-  });
-  flush();
-
-  return runs;
-}
-
 type MarkTouch = {
   type: "strong" | "em";
   from: number;
@@ -123,34 +69,20 @@ type MarkTouch = {
   insideOffset: number;
 };
 
-const HeadingHashHint = Extension.create({
-  name: "headingHashHint",
-  addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        key: new PluginKey("headingHashHint"),
-        props: {
-          decorations(state) {
-            const { selection, doc } = state;
-            if (!selection.empty) return null;
-            const $from = selection.$from;
-            for (let depth = $from.depth; depth >= 0; depth--) {
-              const node = $from.node(depth);
-              if (node.type.name !== "heading") continue;
-              const pos = $from.before(depth);
-              return DecorationSet.create(doc, [
-                Decoration.node(pos, pos + node.nodeSize, {
-                  class: "heading-show-hash",
-                }),
-              ]);
-            }
-            return null;
-          },
-        },
-      }),
-    ];
-  },
-});
+function touchedHeadingNode(state: EditorState) {
+  if (!state.selection.empty) return null;
+  const $from = state.selection.$from;
+  for (let depth = $from.depth; depth >= 0; depth--) {
+    const node = $from.node(depth);
+    if (node.type.name !== "heading") continue;
+    const pos = $from.before(depth);
+    const level = node.attrs.level as number;
+    const text = `${"#".repeat(level)} ${node.textContent}`;
+    const offsetInHeading = Math.max(0, Math.min(state.selection.from - (pos + 1), node.textContent.length));
+    return { pos, node, text, cursor: pos + 1 + "#".repeat(level).length + 1 + offsetInHeading };
+  }
+  return null;
+}
 
 function touchedMarkedSpan(
   state: EditorState,
@@ -216,108 +148,52 @@ const MarkdownEditOnTouch = Extension.create({
       new Plugin({
         key: new PluginKey("markdownEditOnTouch"),
         appendTransaction: (transactions, _oldState, newState) => {
-          const hasSelectionSet = transactions.some((tr) => tr.selectionSet);
-          if (!hasSelectionSet) return null;
-          const hasDocChanged = transactions.some((tr) => tr.docChanged);
+          if (!transactions.some((tr) => tr.selectionSet)) return null;
 
-          beginConversionGroup("markdownEditOnTouch");
-          try {
-            logConversion({
-              kind: "trigger",
-              plugin: "markdownEditOnTouch",
-              selectionSet: hasSelectionSet,
-              docChanged: hasDocChanged,
-              selection: {
-                from: newState.selection.from,
-                to: newState.selection.to,
-                empty: newState.selection.empty,
-              },
-            });
-
-            if (hasDocChanged) {
-              logConversion({
-                kind: "skip",
-                plugin: "markdownEditOnTouch",
-                reason: "typing (docChanged) — not a touch",
-              });
-              return null;
-            }
-
-            const cursorBefore = newState.selection.from;
-
-            const strong = touchedMarkedSpan(newState, "strong");
-            if (strong) {
-              logConversion({
-                kind: "detect",
-                plugin: "markdownEditOnTouch",
-                nodeType: "strong",
-                range: { from: strong.from, to: strong.to },
-                details: { side: strong.side, insideOffset: strong.insideOffset },
-              });
-              const text = `**${strong.text}**`;
-              const tr = newState.tr.replaceWith(strong.from, strong.to, newState.schema.text(text));
-              const cursor =
-                strong.side === "left"
-                  ? strong.from
-                  : strong.side === "right"
-                    ? strong.from + text.length
-                    : strong.from + 2 + strong.insideOffset;
-              tr.setSelection(TextSelection.create(tr.doc, cursor));
-              tr.setMeta("addToHistory", false);
-              logConversion({
-                kind: "convert",
-                plugin: "markdownEditOnTouch",
-                from: "strong",
-                to: "text+markdown",
-                range: { from: strong.from, to: strong.to },
-                cursorBefore,
-                cursorAfter: cursor,
-                details: { side: strong.side },
-              });
-              return tr;
-            }
-
-            const em = touchedMarkedSpan(newState, "em");
-            if (em) {
-              logConversion({
-                kind: "detect",
-                plugin: "markdownEditOnTouch",
-                nodeType: "em",
-                range: { from: em.from, to: em.to },
-                details: { side: em.side, insideOffset: em.insideOffset },
-              });
-              const text = `*${em.text}*`;
-              const tr = newState.tr.replaceWith(em.from, em.to, newState.schema.text(text));
-              const cursor =
-                em.side === "left"
-                  ? em.from
-                  : em.side === "right"
-                    ? em.from + text.length
-                    : em.from + 1 + em.insideOffset;
-              tr.setSelection(TextSelection.create(tr.doc, cursor));
-              tr.setMeta("addToHistory", false);
-              logConversion({
-                kind: "convert",
-                plugin: "markdownEditOnTouch",
-                from: "em",
-                to: "text+markdown",
-                range: { from: em.from, to: em.to },
-                cursorBefore,
-                cursorAfter: cursor,
-                details: { side: em.side },
-              });
-              return tr;
-            }
-
-            logConversion({
-              kind: "skip",
-              plugin: "markdownEditOnTouch",
-              reason: "no heading/mark touched",
-            });
-            return null;
-          } finally {
-            endConversionGroup();
+          const heading = touchedHeadingNode(newState);
+          if (heading) {
+            const tr = newState.tr;
+            const para = newState.schema.nodes.paragraph.create(
+              null,
+              newState.schema.text(heading.text),
+            );
+            tr.replaceWith(heading.pos, heading.pos + heading.node.nodeSize, para);
+            tr.setSelection(TextSelection.create(tr.doc, heading.cursor));
+            tr.setMeta("addToHistory", false);
+            return tr;
           }
+
+          const strong = touchedMarkedSpan(newState, "strong");
+          if (strong) {
+            const text = `**${strong.text}**`;
+            const tr = newState.tr.replaceWith(strong.from, strong.to, newState.schema.text(text));
+            const cursor =
+              strong.side === "left"
+                ? strong.from
+                : strong.side === "right"
+                  ? strong.from + text.length
+                  : strong.from + 2 + strong.insideOffset;
+            tr.setSelection(TextSelection.create(tr.doc, cursor));
+            tr.setMeta("addToHistory", false);
+            return tr;
+          }
+
+          const em = touchedMarkedSpan(newState, "em");
+          if (em) {
+            const text = `*${em.text}*`;
+            const tr = newState.tr.replaceWith(em.from, em.to, newState.schema.text(text));
+            const cursor =
+              em.side === "left"
+                ? em.from
+                : em.side === "right"
+                  ? em.from + text.length
+                  : em.from + 1 + em.insideOffset;
+            tr.setSelection(TextSelection.create(tr.doc, cursor));
+            tr.setMeta("addToHistory", false);
+            return tr;
+          }
+
+          return null;
         },
       }),
     ];
@@ -350,198 +226,35 @@ function touchedMathBoundary(state: EditorState): MathBoundaryTouch | null {
 
 const MathEditOnTouch = Extension.create({
   name: "mathEditOnTouch",
-  addKeyboardShortcuts() {
-    return {
-      Backspace: ({ editor }) => {
-        const { selection, doc, schema } = editor.state;
-        if (!selection.empty) return false;
-        const { inlineMath, blockMath } = schema.nodes;
-        if (!inlineMath && !blockMath) return false;
-
-        const cursorPos = selection.from;
-        let hit: { node: PMNode; pos: number } | null = null;
-        doc.descendants((node, pos) => {
-          if (node.type !== inlineMath && node.type !== blockMath) return;
-          if (pos + node.nodeSize !== cursorPos) return;
-          hit = { node, pos };
-          return false;
-        });
-        const target = hit as { node: PMNode; pos: number } | null;
-        if (!target) return false;
-
-        beginConversionGroup("mathEditOnTouch");
-        try {
-          logConversion({
-            kind: "detect",
-            plugin: "mathEditOnTouch",
-            nodeType: target.node.type.name,
-            range: { from: target.pos, to: target.pos + target.node.nodeSize },
-            details: { trigger: "backspace", latex: target.node.attrs.latex },
-          });
-          if (target.node.type === inlineMath) {
-            revertInlineMath(editor, target.node, target.pos);
-          } else {
-            revertBlockMath(editor, target.node, target.pos);
-          }
-          logConversion({
-            kind: "convert",
-            plugin: "mathEditOnTouch",
-            from: target.node.type.name,
-            to: target.node.type === inlineMath ? "text+markdown" : "paragraph+markdown",
-            range: { from: target.pos, to: target.pos + target.node.nodeSize },
-            cursorBefore: cursorPos,
-            cursorAfter: editor.state.selection.from,
-            details: { trigger: "backspace" },
-          });
-        } finally {
-          endConversionGroup();
-        }
-        return true;
-      },
-    };
-  },
   addProseMirrorPlugins() {
     return [
       new Plugin({
         key: new PluginKey("mathEditOnTouch"),
         appendTransaction: (transactions, _oldState, newState) => {
-          const hasSelectionSet = transactions.some((tr) => tr.selectionSet);
-          if (!hasSelectionSet) return null;
-          const hasDocChanged = transactions.some((tr) => tr.docChanged);
+          if (!transactions.some((tr) => tr.selectionSet)) return null;
 
-          beginConversionGroup("mathEditOnTouch");
-          try {
-            logConversion({
-              kind: "trigger",
-              plugin: "mathEditOnTouch",
-              selectionSet: hasSelectionSet,
-              docChanged: hasDocChanged,
-              selection: {
-                from: newState.selection.from,
-                to: newState.selection.to,
-                empty: newState.selection.empty,
-              },
-            });
+          const hit = touchedMathBoundary(newState);
+          if (!hit) return null;
 
-            if (hasDocChanged) {
-              logConversion({
-                kind: "skip",
-                plugin: "mathEditOnTouch",
-                reason: "typing (docChanged) — not a touch",
-              });
-              return null;
-            }
+          const node = hit.node;
+          const pos = hit.pos;
+          const tr = newState.tr;
 
-            if (!newState.selection.empty) {
-              const { inlineMath, blockMath } = newState.schema.nodes;
-              const selFrom = newState.selection.from;
-              const selTo = newState.selection.to;
-              const overlaps: Array<{ node: PMNode; pos: number }> = [];
-              newState.doc.descendants((node, pos) => {
-                if (node.type !== inlineMath && node.type !== blockMath) return;
-                const nodeFrom = pos;
-                const nodeTo = pos + node.nodeSize;
-                if (nodeTo <= selFrom || nodeFrom >= selTo) return;
-                overlaps.push({ node, pos });
-              });
-              if (overlaps.length > 0) {
-                const tr = newState.tr;
-                for (let i = overlaps.length - 1; i >= 0; i--) {
-                  const { node, pos } = overlaps[i];
-                  logConversion({
-                    kind: "detect",
-                    plugin: "mathEditOnTouch",
-                    nodeType: node.type.name,
-                    range: { from: pos, to: pos + node.nodeSize },
-                    details: { trigger: "selection-overlap", latex: node.attrs.latex },
-                  });
-                  if (node.type === blockMath) {
-                    const text = `$$${node.attrs.latex}$$`;
-                    const para = newState.schema.nodes.paragraph.create(
-                      null,
-                      newState.schema.text(text),
-                    );
-                    tr.replaceWith(pos, pos + node.nodeSize, para);
-                  } else {
-                    const text = `$${node.attrs.latex}$`;
-                    tr.replaceWith(pos, pos + node.nodeSize, newState.schema.text(text));
-                  }
-                }
-                const mappedFrom = tr.mapping.map(selFrom, -1);
-                const mappedTo = tr.mapping.map(selTo, 1);
-                const $from = tr.doc.resolve(mappedFrom);
-                const $to = tr.doc.resolve(mappedTo);
-                tr.setSelection(TextSelection.between($from, $to));
-                tr.setMeta("addToHistory", false);
-                logConversion({
-                  kind: "convert",
-                  plugin: "mathEditOnTouch",
-                  from: "math(overlap)",
-                  to: "text+markdown",
-                  range: { from: selFrom, to: selTo },
-                  cursorBefore: selFrom,
-                  cursorAfter: tr.selection.from,
-                  details: { trigger: "selection-overlap", reverted: overlaps.length },
-                });
-                return tr;
-              }
-            }
-
-            const cursorBefore = newState.selection.from;
-            const hit = touchedMathBoundary(newState);
-            if (!hit) {
-              logConversion({
-                kind: "skip",
-                plugin: "mathEditOnTouch",
-                reason: "no math boundary touch",
-              });
-              return null;
-            }
-
-            const node = hit.node;
-            const pos = hit.pos;
-            logConversion({
-              kind: "detect",
-              plugin: "mathEditOnTouch",
-              nodeType: node.type.name,
-              range: { from: pos, to: pos + node.nodeSize },
-              details: { side: hit.side, latex: node.attrs.latex },
-            });
-
-            const tr = newState.tr;
-            let cursorAfter: number;
-            let targetType: string;
-
-            if (node.type.name === "blockMath") {
-              const text = `$$${node.attrs.latex}$$`;
-              const para = newState.schema.nodes.paragraph.create(null, newState.schema.text(text));
-              tr.replaceWith(pos, pos + node.nodeSize, para);
-              cursorAfter = hit.side === "left" ? pos + 1 : pos + 1 + text.length;
-              tr.setSelection(TextSelection.create(tr.doc, cursorAfter));
-              targetType = "paragraph+markdown";
-            } else {
-              const text = `$${node.attrs.latex}$`;
-              tr.replaceWith(pos, pos + node.nodeSize, newState.schema.text(text));
-              cursorAfter = hit.side === "left" ? pos : pos + text.length;
-              tr.setSelection(TextSelection.create(tr.doc, cursorAfter));
-              targetType = "text+markdown";
-            }
-
-            tr.setMeta("addToHistory", false);
-            logConversion({
-              kind: "convert",
-              plugin: "mathEditOnTouch",
-              from: node.type.name,
-              to: targetType,
-              range: { from: pos, to: pos + node.nodeSize },
-              cursorBefore,
-              cursorAfter,
-              details: { side: hit.side },
-            });
-            return tr;
-          } finally {
-            endConversionGroup();
+          if (node.type.name === "blockMath") {
+            const text = `$$${node.attrs.latex}$$`;
+            const para = newState.schema.nodes.paragraph.create(null, newState.schema.text(text));
+            tr.replaceWith(pos, pos + node.nodeSize, para);
+            const cursor = hit.side === "left" ? pos + 1 : pos + 1 + text.length;
+            tr.setSelection(TextSelection.create(tr.doc, cursor));
+          } else {
+            const text = `$${node.attrs.latex}$`;
+            tr.replaceWith(pos, pos + node.nodeSize, newState.schema.text(text));
+            const cursor = hit.side === "left" ? pos : pos + text.length;
+            tr.setSelection(TextSelection.create(tr.doc, cursor));
           }
+
+          tr.setMeta("addToHistory", false);
+          return tr;
         },
       }),
     ];
@@ -561,228 +274,60 @@ const MathMigration = Extension.create({
           const selectionFrom = newState.selection.from;
           const selectionTo = newState.selection.to;
 
-          beginConversionGroup("mathMigration");
-          try {
-            logConversion({
-              kind: "trigger",
-              plugin: "mathMigration",
-              selectionSet: transactions.some((tr) => tr.selectionSet),
-              docChanged: transactions.some((tr) => tr.docChanged),
-              selection: {
-                from: selectionFrom,
-                to: selectionTo,
-                empty: newState.selection.empty,
-              },
-            });
+          const tr = newState.tr;
 
-            const tr = newState.tr;
-
-            const typedNow = transactions.some((tr) => tr.docChanged);
-            const blockHits: Array<{ from: number; to: number; latex: string; placeCursorAfter: boolean }> = [];
-            let forcedCursorPos: number | null = null;
-            newState.doc.descendants((node, pos) => {
-              if (node.type !== paragraph) return;
-              const paragraphMap = getParagraphTextMap(node, pos);
-              if (!paragraphMap) {
-                logConversion({
-                  kind: "skip",
-                  plugin: "mathMigration",
-                  reason: "non-text paragraph",
-                  details: { pos, phase: "block" },
-                });
-                return;
-              }
-              const m = paragraphMap.text.match(BLOCK_MATH_RE);
-              if (!m) return;
-              const matchFrom = pos + 1;
-              const matchTo = pos + node.nodeSize - 1;
-              const closingTypedAtEnd =
-                typedNow &&
-                newState.selection.empty &&
-                selectionFrom === selectionTo &&
-                selectionFrom === matchTo;
-              if (
-                selectionTouchesRange(selectionFrom, selectionTo, matchFrom, matchTo) &&
-                !closingTypedAtEnd
-              ) {
-                logConversion({
-                  kind: "skip",
-                  plugin: "mathMigration",
-                  reason: "selection touches range",
-                  details: { phase: "block", range: { from: matchFrom, to: matchTo } },
-                });
-                return;
-              }
-              const latex = m[1].trim();
-              if (!latex) {
-                logConversion({
-                  kind: "skip",
-                  plugin: "mathMigration",
-                  reason: "empty latex",
-                  details: { phase: "block", range: { from: matchFrom, to: matchTo } },
-                });
-                return;
-              }
-              logConversion({
-                kind: "detect",
-                plugin: "mathMigration",
-                nodeType: "blockMath-candidate",
-                range: { from: pos, to: pos + node.nodeSize },
-                details: { latex, closingTypedAtEnd },
-              });
-              blockHits.push({
-                from: pos,
-                to: pos + node.nodeSize,
-                latex,
-                placeCursorAfter: closingTypedAtEnd,
-              });
-            });
-            for (let i = blockHits.length - 1; i >= 0; i--) {
-              const { from, to, latex, placeCursorAfter } = blockHits[i];
-              const mappedFrom = tr.mapping.map(from);
-              const mappedTo = tr.mapping.map(to);
-              const blockNode = blockMath.create({ latex });
-              tr.replaceWith(mappedFrom, mappedTo, blockNode);
-              if (placeCursorAfter) {
-                const afterBlock = mappedFrom + blockNode.nodeSize;
-                tr.insert(afterBlock, paragraph.create());
-                forcedCursorPos = afterBlock + 1;
-              }
-              logConversion({
-                kind: "convert",
-                plugin: "mathMigration",
-                from: "paragraph",
-                to: "blockMath",
-                range: { from: mappedFrom, to: mappedTo },
-                cursorBefore: selectionFrom,
-                cursorAfter: forcedCursorPos ?? selectionFrom,
-                details: { latex, placeCursorAfter },
-              });
-            }
-
-            const inlineHits: Array<{ from: number; to: number; latex: string }> = [];
-            tr.doc.descendants((node, pos) => {
-              if (node.type !== paragraph) return;
-              const runs = getParagraphTextRuns(node, pos);
-              for (const run of runs) {
-                if (!run.text.includes("$")) continue;
-                const re = new RegExp(INLINE_MATH_RE.source, "g");
-                let m: RegExpExecArray | null;
-                while ((m = re.exec(run.text)) !== null) {
-                  const localFrom = m.index;
-                  const localTo = localFrom + m[0].length;
-                  const from = run.offsetToPos(localFrom);
-                  const to = run.offsetToPos(localTo);
-                  const openPrev = localFrom > 0 ? run.text[localFrom - 1] : "";
-                  const openNext = localFrom + 1 < run.text.length ? run.text[localFrom + 1] : "";
-                  const closePrev = localTo - 2 >= 0 ? run.text[localTo - 2] : "";
-                  const closeNext = localTo < run.text.length ? run.text[localTo] : "";
-                  if (openPrev === "$" || openNext === "$" || closePrev === "$" || closeNext === "$") {
-                    logConversion({
-                      kind: "skip",
-                      plugin: "mathMigration",
-                      reason: "adjacent $ around inline delimiter",
-                      details: {
-                        phase: "inline",
-                        range: { from, to },
-                        openPrev,
-                        openNext,
-                        closePrev,
-                        closeNext,
-                      },
-                    });
-                    continue;
-                  }
-                  const before = charBefore(tr.doc, from);
-                  const after = charAfter(tr.doc, to);
-                  if (before === "$" || after === "$") {
-                    logConversion({
-                      kind: "skip",
-                      plugin: "mathMigration",
-                      reason: "adjacent $ (block-math overlap)",
-                      details: { phase: "inline", range: { from, to }, before, after },
-                    });
-                    continue;
-                  }
-                  if (before && /\d/.test(before)) {
-                    logConversion({
-                      kind: "skip",
-                      plugin: "mathMigration",
-                      reason: "digit before",
-                      details: { phase: "inline", range: { from, to }, before },
-                    });
-                    continue;
-                  }
-                  if (after && /\d/.test(after)) {
-                    logConversion({
-                      kind: "skip",
-                      plugin: "mathMigration",
-                      reason: "digit after",
-                      details: { phase: "inline", range: { from, to }, after },
-                    });
-                    continue;
-                  }
-                  if (selectionTouchesRange(selectionFrom, selectionTo, from, to)) {
-                    logConversion({
-                      kind: "skip",
-                      plugin: "mathMigration",
-                      reason: "selection touches range",
-                      details: { phase: "inline", range: { from, to } },
-                    });
-                    continue;
-                  }
-                  logConversion({
-                    kind: "detect",
-                    plugin: "mathMigration",
-                    nodeType: "inlineMath-candidate",
-                    range: { from, to },
-                    details: { latex: m[1] },
-                  });
-                  inlineHits.push({ from, to, latex: m[1] });
-                }
-              }
-            });
-            for (let i = inlineHits.length - 1; i >= 0; i--) {
-              const { from, to, latex } = inlineHits[i];
-              const $from = tr.doc.resolve(from);
-              if (!$from.parent.canReplaceWith($from.index(), $from.index() + 1, inlineMath)) {
-                logConversion({
-                  kind: "skip",
-                  plugin: "mathMigration",
-                  reason: "canReplaceWith rejected",
-                  details: { phase: "inline", range: { from, to } },
-                });
-                continue;
-              }
-              tr.replaceWith(from, to, inlineMath.create({ latex }));
-              logConversion({
-                kind: "convert",
-                plugin: "mathMigration",
-                from: "text",
-                to: "inlineMath",
-                range: { from, to },
-                cursorBefore: selectionFrom,
-                cursorAfter: selectionFrom,
-                details: { latex },
-              });
-            }
-
-            if (!tr.docChanged) {
-              logConversion({
-                kind: "skip",
-                plugin: "mathMigration",
-                reason: "no net doc change",
-              });
-              return null;
-            }
-            if (forcedCursorPos !== null) {
-              tr.setSelection(TextSelection.create(tr.doc, forcedCursorPos));
-            }
-            tr.setMeta("addToHistory", false);
-            return tr;
-          } finally {
-            endConversionGroup();
+          const blockHits: Array<{ from: number; to: number; latex: string }> = [];
+          newState.doc.descendants((node, pos) => {
+            if (node.type !== paragraph) return;
+            const paragraphMap = getParagraphTextMap(node, pos);
+            if (!paragraphMap) return;
+            const m = paragraphMap.text.match(BLOCK_MATH_RE);
+            if (!m) return;
+            const matchFrom = pos + 1;
+            const matchTo = pos + node.nodeSize - 1;
+            if (selectionTouchesRange(selectionFrom, selectionTo, matchFrom, matchTo)) return;
+            const latex = m[2].trim();
+            if (!latex) return;
+            blockHits.push({ from: pos, to: pos + node.nodeSize, latex });
+          });
+          for (let i = blockHits.length - 1; i >= 0; i--) {
+            const { from, to, latex } = blockHits[i];
+            tr.replaceWith(from, to, blockMath.create({ latex }));
           }
+
+          const inlineHits: Array<{ from: number; to: number; latex: string }> = [];
+          tr.doc.descendants((node, pos) => {
+            if (node.type !== paragraph) return;
+            const paragraphMap = getParagraphTextMap(node, pos);
+            if (!paragraphMap || !paragraphMap.text.includes("$")) return;
+            const re = new RegExp(INLINE_MATH_RE.source, "g");
+            let m: RegExpExecArray | null;
+            while ((m = re.exec(paragraphMap.text)) !== null) {
+              const localFrom = m.index;
+              const localTo = localFrom + m[0].length;
+              const from = paragraphMap.offsetToPos(localFrom);
+              const to = paragraphMap.offsetToPos(localTo);
+              const before = charBefore(tr.doc, from);
+              const after = charAfter(tr.doc, to);
+              // Guard against matches that are actually part of $$...$$ / $$$...$$$ across node boundaries.
+              if (before === "$" || after === "$") continue;
+              if (before && /\d/.test(before)) continue;
+              if (after && /\d/.test(after)) continue;
+              if (selectionTouchesRange(selectionFrom, selectionTo, from, to)) continue;
+              inlineHits.push({ from, to, latex: m[1] });
+            }
+          });
+          for (let i = inlineHits.length - 1; i >= 0; i--) {
+            const { from, to, latex } = inlineHits[i];
+            const $from = tr.doc.resolve(from);
+            if (!$from.parent.canReplaceWith($from.index(), $from.index() + 1, inlineMath))
+              continue;
+            tr.replaceWith(from, to, inlineMath.create({ latex }));
+          }
+
+          if (!tr.docChanged) return null;
+          tr.setMeta("addToHistory", false);
+          return tr;
         },
       }),
     ];
@@ -817,7 +362,6 @@ export function Editor() {
     extensions: [
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       Placeholder.configure({ placeholder: "Start writing…" }),
-      HeadingHashHint,
       MarkdownEditOnTouch,
       InlineMath.configure({
         katexOptions: { throwOnError: false, displayMode: false },
