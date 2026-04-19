@@ -22,3 +22,21 @@
 .tiptap-mathematics-render--editable {
   cursor: pointer;
 }
+
+.ProseMirror h1.heading-show-hash::before {
+  content: "# ";
+  color: theme("colors.neutral.400");
+}
+.ProseMirror h2.heading-show-hash::before {
+  content: "## ";
+  color: theme("colors.neutral.400");
+}
+.ProseMirror h3.heading-show-hash::before {
+  content: "### ";
+  color: theme("colors.neutral.400");
+}
+.dark .ProseMirror h1.heading-show-hash::before,
+.dark .ProseMirror h2.heading-show-hash::before,
+.dark .ProseMirror h3.heading-show-hash::before {
+  color: theme("colors.neutral.600");
+}
