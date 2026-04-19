@@ -359,14 +359,20 @@ const MathEditOnTouch = Extension.create({
         if (!inlineMath && !blockMath) return false;
 
         const cursorPos = selection.from;
-        let hit: { node: PMNode; pos: number } | null = null;
-        doc.descendants((node, pos) => {
-          if (node.type !== inlineMath && node.type !== blockMath) return;
-          if (pos + node.nodeSize !== cursorPos) return;
-          hit = { node, pos };
-          return false;
-        });
-        const target = hit as { node: PMNode; pos: number } | null;
+        const $from = selection.$from;
+        let target: { node: PMNode; pos: number } | null = null;
+
+        const nodeBefore = $from.nodeBefore;
+        if (nodeBefore && inlineMath && nodeBefore.type === inlineMath) {
+          target = { node: nodeBefore, pos: cursorPos - nodeBefore.nodeSize };
+        } else if (blockMath && $from.depth > 0 && $from.parentOffset === 0) {
+          const blockStart = $from.before();
+          const $block = doc.resolve(blockStart);
+          const prevBlock = $block.nodeBefore;
+          if (prevBlock && prevBlock.type === blockMath) {
+            target = { node: prevBlock, pos: blockStart - prevBlock.nodeSize };
+          }
+        }
         if (!target) return false;
 
         beginConversionGroup("mathEditOnTouch");
@@ -437,11 +443,8 @@ const MathEditOnTouch = Extension.create({
               const selFrom = newState.selection.from;
               const selTo = newState.selection.to;
               const overlaps: Array<{ node: PMNode; pos: number }> = [];
-              newState.doc.descendants((node, pos) => {
+              newState.doc.nodesBetween(selFrom, selTo, (node, pos) => {
                 if (node.type !== inlineMath && node.type !== blockMath) return;
-                const nodeFrom = pos;
-                const nodeTo = pos + node.nodeSize;
-                if (nodeTo <= selFrom || nodeFrom >= selTo) return;
                 overlaps.push({ node, pos });
               });
               if (overlaps.length > 0) {

@@ -1,7 +1,7 @@
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use tauri::Manager;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -9,23 +9,18 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-fn conversion_log_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("conversion.log")
-}
-
 static LOG_LOCK: Mutex<()> = Mutex::new(());
 
 #[tauri::command]
-fn log_conversion(line: String) -> Result<(), String> {
+fn log_conversion(app: tauri::AppHandle, line: String) -> Result<(), String> {
+    let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("conversion.log");
     let _guard = LOG_LOCK.lock().map_err(|e| e.to_string())?;
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(conversion_log_path())
+        .open(path)
         .map_err(|e| e.to_string())?;
     writeln!(file, "{}", line).map_err(|e| e.to_string())?;
     Ok(())

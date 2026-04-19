@@ -13,17 +13,19 @@ When the cursor is a hash, the cursor is positioned in the hash itself, which ca
 
 When writing the first and only the first math equation, and closing it, the cursor will appear inside the equation for a moment, only for it to appear right next to it (where it should be) after a second.
 
-## Display math still needs three dollar signs
+## `$$…$$` mid-paragraph falls back to inline math
 
-Display equations should work with two dollar signs on open and close, but currently two dollar signs often get converted into inline math.
+Block math detection is anchored to the whole paragraph (`BLOCK_MATH_RE = /^\$\$(?!\$)([\s\S]+?)\$\$$/`), so `$$x$$` only converts to display when it's the entire paragraph. When surrounding text is present, block detection misses it and the inline pass picks up the `$…$` interior, producing empty inline-math wrappers around the content.
 
-- Write `$$equation$$`
-- It converts to inline instead of display
-- Using `$$$equation$$$` makes it display, then closing can convert it back to `$$` 
+- Write `some text $$equation$$ more text` on one line
+- Instead of a display block, you get inline math around the interior (`$` pairs matched greedily)
+- Workaround: `$$$equation$$$` sometimes survives the inline pass, but closing can collapse back to `$$`
+
+Related: see "Display math only works with inline `$$`" below — same anchored-regex limitation, different facet.
 
 ## Display math only works with inline `$$`
 
-Display math wont work if the equation is written in the form
+Display math won't work if the equation is written in the form
 
 ```tex
 $$
@@ -40,7 +42,7 @@ $$\implies S=\lim_{ n \to \infty } \sum_{i=1}^N|| \frac{\vec{r}(t_{i}+\Delta t_{
 
 ## Pasting text with math 
 
-When a markdown text that contains math is pasted the resulting text does not have the `$` for the math equations. For example:
+When a Markdown text that contains math is pasted the resulting text does not have the `$` for the math equations. For example:
 
 Copying
 
