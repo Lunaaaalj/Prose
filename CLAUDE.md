@@ -52,6 +52,16 @@ If the Rust package is renamed, update three places or builds break:
 2. `src-tauri/src/main.rs` — the `<name>_lib::run()` call
 3. `src-tauri/tauri.conf.json` — `productName` / `identifier` if they're meant to match
 
+## Documentation
+
+These files exist at the repo root — read them before making structural changes:
+
+- `ARCHITECTURE.md` — deep-dive on the two-process Tauri model, TipTap extensions, IPC boundary, Tailwind setup
+- `CONTRIBUTING.md` — commit conventions, branch naming, PR workflow, EditorConfig rules
+- `CHANGELOG.md` — version history (Keep a Changelog format); update when shipping a fix or feature
+- `SECURITY.md` — responsible disclosure, supported versions, dependency audit guidance
+- `THREAT_MODELING.md` — attack surface analysis, risk ratings, future risks
+
 ## Git / PR workflow
 
 Do not push or close issues automatically — leave both to the user unless they explicitly ask. Commit messages follow conventional-style (`chore:`, `feat:`, `fix:`) and reference the issue number (`closes #N`).
