@@ -11,6 +11,7 @@ Prose is a macOS desktop markdown editor built on **Tauri 2** — a framework th
 │                                             │
 │  invoke("command_name", args)  ─────────┐  │
 │  ← Result<T, String>           ◄────────┘  │
+│  openDialog() / saveDialog()               │
 └──────────────────────┬──────────────────────┘
                        │  Tauri IPC (serialized messages)
 ┌──────────────────────▼──────────────────────┐
@@ -19,10 +20,12 @@ Prose is a macOS desktop markdown editor built on **Tauri 2** — a framework th
 │                                             │
 │  #[tauri::command] handlers                 │
 │  Plugins: tauri-plugin-opener               │
+│           tauri-plugin-dialog               │
+│           tauri-plugin-fs                   │
 └─────────────────────────────────────────────┘
 ```
 
-Neither process can reach the other's internals except through this boundary. The frontend cannot access the filesystem directly — it must call a backend command.
+Neither process can reach the other's internals except through this boundary. The frontend does not access the filesystem directly — file reads and writes go through `read_file` / `write_file` backend commands; the native open/save dialog is provided by `tauri-plugin-dialog`.
 
 ---
 
@@ -30,7 +33,7 @@ Neither process can reach the other's internals except through this boundary. Th
 
 **Entry:** `index.html` → `src/main.tsx` → `src/App.tsx`
 
-`main.tsx` mounts the React root and pulls in global styles (Tailwind directives and KaTeX CSS). `App.tsx` is a minimal layout shell — a centered, max-width container — that renders the single `<Editor />` component.
+`main.tsx` mounts the React root and pulls in global styles (Tailwind directives and KaTeX CSS). `App.tsx` owns file state (current path, dirty flag) and drives open/save via Tauri dialog and IPC commands. It renders a centered, max-width container with the `<Editor />` component, passing `initialMarkdown`, an `onChange` callback, and an `editorRef` for content access.
 
 ### Editor component (`src/components/Editor.tsx`)
 
@@ -49,6 +52,13 @@ All editor logic lives here. It uses TipTap's `useEditor()` hook, which wraps a 
 
 The `MarkdownEditOnTouch` and `MathEditOnTouch` extensions implement a **render-on-blur / edit-on-touch** pattern: content is displayed as a rendered node until the cursor enters, at which point it converts back to raw syntax. This avoids a separate preview pane.
 
+### Markdown conversion (`src/utils/markdown.ts`)
+
+Two pure functions used at the IPC boundary for file I/O:
+
+- `markdownToHtml(md)` — converts raw markdown (with `$…$` / `$$…$$` math) to the HTML that TipTap expects as its initial `content`. Uses `marked` for standard markdown and replaces math delimiters with custom `data-type` attributes before parsing.
+- `htmlToMarkdown(html)` — serializes the editor's HTML back to Markdown for saving. Uses `turndown` with custom rules that round-trip the `data-type="block-math"` / `data-type="inline-math"` nodes back to `$$…$$` / `$…$` syntax.
+
 ### Conversion logger (`src/utils/conversionLogger.ts`)
 
 A thin utility that calls `invoke("log_conversion", { line })` to append JSON lines to a `conversion.log` file on disk. Used for debugging the markdown↔node conversion pipeline. All disk access goes through the backend command — the frontend has no direct file API.
@@ -66,8 +76,12 @@ A thin utility that calls `invoke("log_conversion", { line })` to append JSON li
 ```rust
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())   // register plugins
-        .invoke_handler(tauri::generate_handler![greet, log_conversion])
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .invoke_handler(tauri::generate_handler![
+            greet, log_conversion, read_file, write_file
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -81,6 +95,8 @@ Every `#[tauri::command]` function must appear in `generate_handler![]` or calls
 |---|---|---|
 | `greet` | `(name: &str) -> String` | Boilerplate example; not wired to the UI |
 | `log_conversion` | `(app: AppHandle, line: String) -> Result<(), String>` | Appends a line to `$APP_LOG_DIR/conversion.log`; thread-safe via a `static Mutex` |
+| `read_file` | `(path: String) -> Result<String, String>` | Reads a file from disk and returns its UTF-8 contents |
+| `write_file` | `(path: String, content: String) -> Result<(), String>` | Writes a string to disk at the given path |
 
 ### Adding a new command
 
@@ -98,8 +114,11 @@ Every `#[tauri::command]` function must appear in `generate_handler![]` or calls
 {
   "windows": ["main"],
   "permissions": [
-    "core:default",      // core Tauri window/event/menu APIs
-    "opener:default"     // tauri-plugin-opener (open URLs / files externally)
+    "core:default",                   // core Tauri window/event/menu APIs
+    "opener:default",                 // tauri-plugin-opener (open URLs / files externally)
+    "dialog:default",                 // tauri-plugin-dialog (native open/save dialogs)
+    "fs:default",                     // tauri-plugin-fs (filesystem access via backend)
+    "core:window:allow-set-title"     // programmatic window title updates
   ]
 }
 ```
@@ -137,8 +156,9 @@ Tauri CLI
 | Path | What it does |
 |---|---|
 | `src/main.tsx` | React entry — mounts root, imports global CSS |
-| `src/App.tsx` | Layout shell |
+| `src/App.tsx` | File state (path, dirty flag), open/save logic, keyboard shortcuts, window title |
 | `src/components/Editor.tsx` | All editor logic — TipTap config, custom extensions, math handling |
+| `src/utils/markdown.ts` | `markdownToHtml` and `htmlToMarkdown` conversion utilities |
 | `src/utils/conversionLogger.ts` | IPC wrapper for the disk logger |
 | `src-tauri/src/lib.rs` | Tauri builder, plugin registration, command handlers |
 | `src-tauri/src/main.rs` | Binary entry — calls `prose_lib::run()` |
