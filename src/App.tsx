@@ -6,10 +6,17 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Editor } from "./components/Editor";
 import { htmlToMarkdown } from "./utils/markdown";
 
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return String(err);
+}
+
 function App() {
   const [path, setPath] = useState<string | null>(null);
   const [initialMarkdown, setInitialMarkdown] = useState("");
   const [isDirty, setIsDirty] = useState(false);
+  const [docId, setDocId] = useState(0);
 
   const editorRef = useRef<TiptapEditor | null>(null);
   const pathRef = useRef(path);
@@ -29,8 +36,9 @@ function App() {
       setPath(picked);
       setInitialMarkdown(md);
       setIsDirty(false);
+      setDocId((d) => d + 1);
     } catch (err) {
-      window.alert(`Failed to open: ${err}`);
+      window.alert(`Failed to open: ${errorMessage(err)}`);
     }
   }, []);
 
@@ -53,7 +61,7 @@ function App() {
       setInitialMarkdown(content);
       setIsDirty(false);
     } catch (err) {
-      window.alert(`Failed to save: ${err}`);
+      window.alert(`Failed to save: ${errorMessage(err)}`);
     }
   }, []);
 
@@ -84,7 +92,7 @@ function App() {
     <main className="min-h-screen bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
       <div className="mx-auto max-w-[720px] px-6 py-12">
         <Editor
-          key={path ?? "untitled"}
+          key={docId}
           initialMarkdown={initialMarkdown}
           onChange={handleChange}
           editorRef={editorRef}

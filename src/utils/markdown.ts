@@ -45,16 +45,30 @@ function escapeAttr(s: string): string {
 }
 
 export function markdownToHtml(md: string): string {
-  const withMath = md
-    .replace(
-      BLOCK_MATH_RE,
-      (_m, tex: string) =>
-        `<div data-type="block-math" data-latex="${escapeAttr(tex)}"></div>`,
-    )
-    .replace(
-      INLINE_MATH_RE,
-      (_m, tex: string) =>
-        `<span data-type="inline-math" data-latex="${escapeAttr(tex)}"></span>`,
-    );
+  const math: { block: boolean; tex: string }[] = [];
+  const tokenized = md
+    .replace(BLOCK_MATH_RE, (_m, tex: string) => {
+      const idx = math.length;
+      math.push({ block: true, tex });
+      return `\x00B${idx}\x00`;
+    })
+    .replace(INLINE_MATH_RE, (_m, tex: string) => {
+      const idx = math.length;
+      math.push({ block: false, tex });
+      return `\x00I${idx}\x00`;
+    });
+
+  // Neutralize raw HTML in the source so `<script>`/`on*` attributes can't
+  // reach TipTap. Only `<` is escaped — `>` is used by markdown blockquotes
+  // and `&` collides with legitimate character references.
+  const safe = tokenized.replace(/</g, "&lt;");
+
+  const withMath = safe.replace(/\x00([BI])(\d+)\x00/g, (_m, kind: string, idx: string) => {
+    const t = math[Number(idx)];
+    return kind === "B"
+      ? `<div data-type="block-math" data-latex="${escapeAttr(t.tex)}"></div>`
+      : `<span data-type="inline-math" data-latex="${escapeAttr(t.tex)}"></span>`;
+  });
+
   return marked.parse(withMath, { async: false, gfm: true, breaks: false }) as string;
 }
