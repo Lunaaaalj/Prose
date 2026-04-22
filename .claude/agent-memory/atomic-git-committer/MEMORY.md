@@ -1,0 +1,1 @@
+- [Prose git conventions](project_git_conventions.md) — commit prefixes, scope style, refs vs closes, branch naming, file groupings

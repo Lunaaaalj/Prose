@@ -1,3 +1,5 @@
+@import "./styles/themes.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,11 +9,7 @@
   float: left;
   height: 0;
   pointer-events: none;
-  color: theme("colors.neutral.400");
-}
-
-.dark .ProseMirror p.is-editor-empty:first-child::before {
-  color: theme("colors.neutral.600");
+  color: var(--placeholder);
 }
 
 .tiptap-mathematics-render[data-type="block-math"] {
@@ -25,18 +23,13 @@
 
 .ProseMirror h1.heading-show-hash::before {
   content: "# ";
-  color: theme("colors.neutral.400");
+  color: var(--heading-hash);
 }
 .ProseMirror h2.heading-show-hash::before {
   content: "## ";
-  color: theme("colors.neutral.400");
+  color: var(--heading-hash);
 }
 .ProseMirror h3.heading-show-hash::before {
   content: "### ";
-  color: theme("colors.neutral.400");
-}
-.dark .ProseMirror h1.heading-show-hash::before,
-.dark .ProseMirror h2.heading-show-hash::before,
-.dark .ProseMirror h3.heading-show-hash::before {
-  color: theme("colors.neutral.600");
+  color: var(--heading-hash);
 }
