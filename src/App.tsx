@@ -4,6 +4,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Editor } from "./components/Editor";
+import { Sidebar } from "./components/Sidebar";
+import { Toolbar } from "./components/Toolbar";
+import { StatusBar } from "./components/StatusBar";
 import { htmlToMarkdown } from "./utils/markdown";
 
 function errorMessage(err: unknown): string {
@@ -17,10 +20,12 @@ function App() {
   const [initialMarkdown, setInitialMarkdown] = useState("");
   const [isDirty, setIsDirty] = useState(false);
   const [docId, setDocId] = useState(0);
+  const [editor, setEditor] = useState<TiptapEditor | null>(null);
 
-  const editorRef = useRef<TiptapEditor | null>(null);
   const pathRef = useRef(path);
   pathRef.current = path;
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
 
   const handleChange = useCallback(() => {
     setIsDirty((prev) => (prev ? prev : true));
@@ -43,8 +48,8 @@ function App() {
   }, []);
 
   const handleSave = useCallback(async () => {
-    const editor = editorRef.current;
-    if (!editor) return;
+    const currentEditor = editorRef.current;
+    if (!currentEditor) return;
     let target = pathRef.current;
     if (!target) {
       const picked = await saveDialog({
@@ -54,7 +59,7 @@ function App() {
       if (typeof picked !== "string") return;
       target = picked;
     }
-    const content = htmlToMarkdown(editor.getHTML());
+    const content = htmlToMarkdown(currentEditor.getHTML());
     try {
       await invoke("write_file", { path: target, content });
       setPath(target);
@@ -64,6 +69,14 @@ function App() {
       window.alert(`Failed to save: ${errorMessage(err)}`);
     }
   }, []);
+
+  const handleNew = useCallback(() => {
+    if (isDirty && !window.confirm("Discard unsaved changes?")) return;
+    setPath(null);
+    setInitialMarkdown("");
+    setIsDirty(false);
+    setDocId((d) => d + 1);
+  }, [isDirty]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -89,16 +102,25 @@ function App() {
   }, [path, isDirty]);
 
   return (
-    <main className="min-h-screen bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
-      <div className="mx-auto max-w-[720px] px-6 py-12">
-        <Editor
-          key={docId}
-          initialMarkdown={initialMarkdown}
-          onChange={handleChange}
-          editorRef={editorRef}
-        />
+    <div className="h-screen flex flex-col bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+      <div className="flex-1 flex min-h-0">
+        <Sidebar path={path} onOpen={handleOpen} onNew={handleNew} />
+        <main className="flex-1 flex flex-col min-w-0">
+          <Toolbar editor={editor} />
+          <div className="flex-1 overflow-auto">
+            <div className="mx-auto max-w-[720px] px-6 py-12">
+              <Editor
+                key={docId}
+                initialMarkdown={initialMarkdown}
+                onChange={handleChange}
+                onEditorReady={setEditor}
+              />
+            </div>
+          </div>
+        </main>
       </div>
-    </main>
+      <StatusBar editor={editor} isDirty={isDirty} />
+    </div>
   );
 }
 

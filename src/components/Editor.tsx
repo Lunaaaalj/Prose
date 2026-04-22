@@ -1,4 +1,4 @@
-import { useRef, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { Extension, type Editor as TiptapEditor } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -818,9 +818,15 @@ type EditorProps = {
   initialMarkdown?: string;
   onChange?: () => void;
   editorRef?: RefObject<TiptapEditor | null>;
+  onEditorReady?: (editor: TiptapEditor | null) => void;
 };
 
-export function Editor({ initialMarkdown, onChange, editorRef: externalRef }: EditorProps = {}) {
+export function Editor({
+  initialMarkdown,
+  onChange,
+  editorRef: externalRef,
+  onEditorReady,
+}: EditorProps = {}) {
   const editorRef = useRef<TiptapEditor | null>(null);
 
   const editor = useEditor({
@@ -862,6 +868,13 @@ export function Editor({ initialMarkdown, onChange, editorRef: externalRef }: Ed
 
   editorRef.current = editor;
   if (externalRef) externalRef.current = editor;
+
+  useEffect(() => {
+    onEditorReady?.(editor);
+    return () => {
+      onEditorReady?.(null);
+    };
+  }, [editor, onEditorReady]);
 
   return <EditorContent editor={editor} />;
 }
