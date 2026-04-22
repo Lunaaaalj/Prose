@@ -39,16 +39,16 @@ Neither process can reach the other's internals except through this boundary. Th
 
 All editor logic lives here. It uses TipTap's `useEditor()` hook, which wraps a ProseMirror document model, and registers the following extensions:
 
-| Extension | Role |
-|---|---|
-| `StarterKit` | Paragraph, headings (h1–h3), bold, italic, inline code, lists, blockquote, hard break |
-| `Placeholder` | "Start writing…" hint when document is empty |
-| `HeadingHashHint` | Custom — renders a faint `#` prefix beside headings when the cursor is inside them |
+| Extension             | Role                                                                                                                                                                   |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StarterKit`          | Paragraph, headings (h1–h3), bold, italic, inline code, lists, blockquote, hard break                                                                                  |
+| `Placeholder`         | "Start writing…" hint when document is empty                                                                                                                           |
+| `HeadingHashHint`     | Custom — renders a faint `#` prefix beside headings when the cursor is inside them                                                                                     |
 | `MarkdownEditOnTouch` | Custom — when the cursor moves onto a **bold** or *italic* mark boundary, converts the rendered node back to its raw `**text**` / `*text*` markdown syntax for editing |
-| `InlineMath` | TipTap mathematics extension — renders `$…$` spans with KaTeX |
-| `BlockMath` | TipTap mathematics extension — renders `$$…$$` blocks with KaTeX, centered |
-| `MathEditOnTouch` | Custom — when the cursor touches a math node edge, reverts it to its `$…$` / `$$…$$` source |
-| `MathMigration` | Custom — watches typed text for `$…$` / `$$…$$` patterns and auto-promotes them to math nodes |
+| `InlineMath`          | TipTap mathematics extension — renders `$…$` spans with KaTeX                                                                                                          |
+| `BlockMath`           | TipTap mathematics extension — renders `$$…$$` blocks with KaTeX, centered                                                                                             |
+| `MathEditOnTouch`     | Custom — when the cursor touches a math node edge, reverts it to its `$…$` / `$$…$$` source                                                                            |
+| `MathMigration`       | Custom — watches typed text for `$…$` / `$$…$$` patterns and auto-promotes them to math nodes                                                                          |
 
 The `MarkdownEditOnTouch` and `MathEditOnTouch` extensions implement a **render-on-blur / edit-on-touch** pattern: content is displayed as a rendered node until the cursor enters, at which point it converts back to raw syntax. This avoids a separate preview pane.
 
@@ -91,12 +91,12 @@ Every `#[tauri::command]` function must appear in `generate_handler![]` or calls
 
 ### Registered commands
 
-| Command | Signature | Purpose |
-|---|---|---|
-| `greet` | `(name: &str) -> String` | Boilerplate example; not wired to the UI |
-| `log_conversion` | `(app: AppHandle, line: String) -> Result<(), String>` | Appends a line to `$APP_LOG_DIR/conversion.log`; thread-safe via a `static Mutex` |
-| `read_file` | `(path: String) -> Result<String, String>` | Reads a file from disk and returns its UTF-8 contents |
-| `write_file` | `(path: String, content: String) -> Result<(), String>` | Writes a string to disk at the given path |
+| Command          | Signature                                               | Purpose                                                                           |
+| ---------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `greet`          | `(name: &str) -> String`                                | Boilerplate example; not wired to the UI                                          |
+| `log_conversion` | `(app: AppHandle, line: String) -> Result<(), String>`  | Appends a line to `$APP_LOG_DIR/conversion.log`; thread-safe via a `static Mutex` |
+| `read_file`      | `(path: String) -> Result<String, String>`              | Reads a file from disk and returns its UTF-8 contents                             |
+| `write_file`     | `(path: String, content: String) -> Result<(), String>` | Writes a string to disk at the given path                                         |
 
 ### Adding a new command
 
@@ -153,16 +153,16 @@ Tauri CLI
 
 ## Key files at a glance
 
-| Path | What it does |
-|---|---|
-| `src/main.tsx` | React entry — mounts root, imports global CSS |
-| `src/App.tsx` | File state (path, dirty flag), open/save logic, keyboard shortcuts, window title |
-| `src/components/Editor.tsx` | All editor logic — TipTap config, custom extensions, math handling |
-| `src/utils/markdown.ts` | `markdownToHtml` and `htmlToMarkdown` conversion utilities |
-| `src/utils/conversionLogger.ts` | IPC wrapper for the disk logger |
-| `src-tauri/src/lib.rs` | Tauri builder, plugin registration, command handlers |
-| `src-tauri/src/main.rs` | Binary entry — calls `prose_lib::run()` |
-| `src-tauri/tauri.conf.json` | Window size/title, bundle identity, dev server URL |
-| `src-tauri/capabilities/default.json` | Frontend API permission allowlist |
-| `tailwind.config.js` | Tailwind content globs and dark mode strategy |
-| `src/index.css` | Tailwind directives + ProseMirror / KaTeX overrides |
+| Path                                  | What it does                                                                     |
+| ------------------------------------- | -------------------------------------------------------------------------------- |
+| `src/main.tsx`                        | React entry — mounts root, imports global CSS                                    |
+| `src/App.tsx`                         | File state (path, dirty flag), open/save logic, keyboard shortcuts, window title |
+| `src/components/Editor.tsx`           | All editor logic — TipTap config, custom extensions, math handling               |
+| `src/utils/markdown.ts`               | `markdownToHtml` and `htmlToMarkdown` conversion utilities                       |
+| `src/utils/conversionLogger.ts`       | IPC wrapper for the disk logger                                                  |
+| `src-tauri/src/lib.rs`                | Tauri builder, plugin registration, command handlers                             |
+| `src-tauri/src/main.rs`               | Binary entry — calls `prose_lib::run()`                                          |
+| `src-tauri/tauri.conf.json`           | Window size/title, bundle identity, dev server URL                               |
+| `src-tauri/capabilities/default.json` | Frontend API permission allowlist                                                |
+| `tailwind.config.js`                  | Tailwind content globs and dark mode strategy                                    |
+| `src/index.css`                       | Tailwind directives + ProseMirror / KaTeX overrides                              |
